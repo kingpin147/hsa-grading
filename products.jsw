@@ -1,0 +1,29 @@
+import wixStoresBackend from 'wix-stores-backend';
+import { addProductMedia } from 'backend/product'
+export async function createProducts(cartLineItems) {
+    try {
+
+        for (let i = 0; i < cartLineItems.length; i++) {
+            let product = cartLineItems[i]
+
+            let productInfo = {
+                name: product.name,
+                description: product.description,
+                price: product.price,
+                productType: 'physical',
+                visible: true
+            }
+            let prod = await createProduct(productInfo)
+            await addProductMedia(prod._id, product.map(img => ({ src: img.src })));
+        }
+
+    } catch (error) {
+        return error
+    }
+    return 'PRODUCTS CREATED'
+
+}
+
+export function createProduct(myProduct) {
+    return wixStoresBackend.createProduct(myProduct);
+}

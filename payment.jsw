@@ -1,0 +1,130 @@
+/**
+ * BACKEND UPDATE: Tax & Shipping Calculation
+ * Date: 2026-01-24
+ * Description: Moved sensitive tax and shipping calculations from the frontend to the backend 
+ * to ensure security and price integrity.
+ */
+import wixPay from "wix-pay-backend";
+
+const STATE_TAX_RATES = {
+    "Alabama": 0.0946,
+    "Alaska": 0.0182,
+    "Arizona": 0.0852,
+    "Arkansas": 0.0946,
+    "California": 0.0899,
+    "Colorado": 0.0789,
+    "Connecticut": 0.0635,
+    "Delaware": 0.0,
+    "Florida": 0.0698,
+    "Georgia": 0.0749,
+    "Hawaii": 0.045,
+    "Idaho": 0.0603,
+    "Illinois": 0.0896,
+    "Indiana": 0.07,
+    "Iowa": 0.0694,
+    "Kansas": 0.0869,
+    "Kentucky": 0.06,
+    "Louisiana": 0.1011,
+    "Maine": 0.055,
+    "Maryland": 0.06,
+    "Massachusetts": 0.0625,
+    "Michigan": 0.06,
+    "Minnesota": 0.0814,
+    "Mississippi": 0.0706,
+    "Missouri": 0.0844,
+    "Montana": 0.0,
+    "Nebraska": 0.0698,
+    "Nevada": 0.0824,
+    "New Hampshire": 0.0,
+    "New Jersey": 0.066,
+    "New Mexico": 0.0767,
+    "New York": 0.0854,
+    "North Carolina": 0.07,
+    "North Dakota": 0.0709,
+    "Ohio": 0.0729,
+    "Oklahoma": 0.0906,
+    "Oregon": 0.0,
+    "Pennsylvania": 0.0634,
+    "Rhode Island": 0.07,
+    "South Carolina": 0.0749,
+    "South Dakota": 0.0611,
+    "Tennessee": 0.0961,
+    "Texas": 0.082,
+    "Utah": 0.0742,
+    "Vermont": 0.0639,
+    "Virginia": 0.0577,
+    "Washington": 0.0951,
+    "West Virginia": 0.0659,
+    "Wisconsin": 0.0572,
+    "Wyoming": 0.0556,
+    "District of Columbia": 0.06
+};
+
+const INTERNATIONAL_TAX_RATE = 0.15;
+const SHIPPING_FEE = 25.0;
+
+/**
+ * Creates a payment in Wix Pay
+ * NEW UPDATE: This function now handles all final math (subtotal, tax, and shipping) 
+ * before creating the Wix Payment object.
+ * 
+ * @param {Object} options - { items, country, state, userInfo }
+ * @returns {Promise<Object>} - payment object with id
+ */
+export async function runPayment({ items: cartItems, country = "USA", state, userInfo }) {
+    // 1. Filter out any existing Tax or Shipping items to prevent duplicates (if passed from frontend)
+    const items = cartItems.filter(item => 
+        !item.name.toLowerCase().includes("tax") && 
+        !item.name.toLowerCase().includes("shipping")
+    );
+
+    // 2. Calculate Subtotal
+    const subtotal = items.reduce((sum, item) => 
+        sum + (parseFloat(item.price) * (item.quantity || 1)), 0
+    );
+
+    // 3. Calculate Tax
+    let taxRate = INTERNATIONAL_TAX_RATE;
+    if (country === "USA") {
+        taxRate = STATE_TAX_RATES[state] || 0;
+    }
+    const taxAmount = subtotal * taxRate;
+
+    // 4. Create the final items list for the payment popup
+    const finalItems = items.map(item => ({
+        name: item.name,
+        price: parseFloat(item.price),
+        quantity: item.quantity || 1
+    }));
+
+    // Add Tax item
+    finalItems.push({
+        name: `Tax (${(taxRate * 100).toFixed(0)}%)`,
+        price: parseFloat(taxAmount.toFixed(2)),
+        quantity: 1
+    });
+
+    // Add Shipping item
+    finalItems.push({
+        name: "Return Shipping Fee",
+        price: SHIPPING_FEE,
+        quantity: 1
+    });
+
+    // 5. Calculate Total Amount
+    const totalAmount = parseFloat((subtotal + taxAmount + SHIPPING_FEE).toFixed(2));
+
+    console.log("#PaymentDetails", { subtotal, taxAmount, shipping: SHIPPING_FEE, totalAmount });
+
+    try {
+        const payment = await wixPay.createPayment({
+            amount: totalAmount,
+            currency: "USD",
+            items: finalItems
+        });
+        return payment;
+    } catch (err) {
+        console.error("Backend payment error:", err);
+        throw err;
+    }
+}
