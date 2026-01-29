@@ -1,5 +1,6 @@
 import wixData from 'wix-data';
 import wixWindow from 'wix-window';
+import wixLocation from 'wix-location';
 
 let generatedInputId = '';
 
@@ -22,7 +23,7 @@ async function displayNextInput1() {
         .limit(1)
         .find({ suppressAuth: true });
 
-    const lastVal = res.items[0]?.input1Value || '000340';
+    const lastVal = res.items[0]?.input1Value;
     console.log("Last input1Value found:", lastVal);
 
     const nextNum = Number(lastVal.replace(/\D/g, '')) + 1;
@@ -68,11 +69,30 @@ async function handleSubmit() {
             });
         });
 
-        // Validate finalGrade
-        let finalGradeValue = Number($w('#finalGradeRadio').value);
-        if (!finalGradeValue || finalGradeValue < 1 || finalGradeValue > 10) {
-            console.warn("Validation failed: Final grade choice is invalid.");
-            showError('❌ Please check your entries and try again.');
+        // Validate finalGrade (Numeric Input vs Radio)
+        const numericGrade = $w('#finalGrade').value;
+        const radioGrade = $w('#finalGradeRadio').value;
+        console.log(`Numeric Grade Input: "${numericGrade}", Radio Grade selection: "${radioGrade}"`);
+
+        // Prioritize the numeric input (1-10) as mentioned by client
+        let finalGradeValue = Number(numericGrade);
+
+        // Fallback or secondary check using numeric parts of any input
+        if (isNaN(finalGradeValue) || finalGradeValue < 1 || finalGradeValue > 10) {
+            if (radioGrade && !isNaN(Number(radioGrade))) {
+                finalGradeValue = Number(radioGrade);
+            } else if (radioGrade) {
+                // Try to extract digits from radio selection (e.g., "Grade 10")
+                const match = String(radioGrade).match(/[\d.]+/);
+                if (match) {
+                    finalGradeValue = Number(match[0]);
+                }
+            }
+        }
+
+        if (isNaN(finalGradeValue) || finalGradeValue < 1 || finalGradeValue > 10) {
+            console.warn(`Validation failed: No valid 1-10 grade found. (Numeric: "${numericGrade}", Radio: "${radioGrade}")`);
+            showError('❌ Please enter a valid final grade between 1 and 10.');
             $w('#button1').enable();
             return; // stop submission
         }
@@ -107,6 +127,12 @@ async function handleSubmit() {
         fullResetForm();
         await displayNextInput1(); // display next number
 
+        // Refresh page after 5 seconds to ensure a completely clean state
+        console.log("Page will refresh in 5 seconds...");
+        setTimeout(() => {
+            wixLocation.to(wixLocation.url);
+        }, 5000);
+
     } catch (err) {
         console.error("Critical error during submission:", err);
         showError('❌ Something went wrong. Please try again.');
@@ -117,20 +143,32 @@ async function handleSubmit() {
 
 // Reset form
 function fullResetForm() {
-    ['#graderId', '#cardMake', '#year', '#variation', '#description', '#cardNumber', '#graderNotes', '#input1'].forEach(id => $w(id).value = '');
+    // We use an empty space ' ' to satisfy 'required' validation as requested, 
+    // and resetValidityIndication to clear any red error borders.
+    const fields = ['#graderId', '#cardMake', '#year', '#variation', '#description', '#cardNumber', '#graderNotes', '#input1', '#finalGrade'];
+    fields.forEach(id => {
+        $w(id).value = ' ';
+        if ($w(id).resetValidityIndication) $w(id).resetValidityIndication();
+    });
+
     $w('#finalGradeRadio').value = null;
     $w('#scanPhoto').reset();
 
-    // Reset front repeater
+    // Reset repeaters
     $w('#frontRepeater').forEachItem(($item) => {
         $item('#frontGradeRadio').value = null;
-        if ($item('#frontIssueDescription')) $item('#frontIssueDescription').value = '';
+        if ($item('#frontIssueDescription')) {
+            $item('#frontIssueDescription').value = ' ';
+            if ($item('#frontIssueDescription').resetValidityIndication) $item('#frontIssueDescription').resetValidityIndication();
+        }
     });
 
-    // Reset back repeater
     $w('#backRepeater').forEachItem(($item) => {
         $item('#backGradeRadio').value = null;
-        if ($item('#backIssueDescription')) $item('#backIssueDescription').value = '';
+        if ($item('#backIssueDescription')) {
+            $item('#backIssueDescription').value = ' ';
+            if ($item('#backIssueDescription').resetValidityIndication) $item('#backIssueDescription').resetValidityIndication();
+        }
     });
 }
 
